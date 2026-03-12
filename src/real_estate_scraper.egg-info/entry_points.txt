@@ -1,2 +1,0 @@
-[console_scripts]
-re-scraper = real_estate_scraper.cli:main
