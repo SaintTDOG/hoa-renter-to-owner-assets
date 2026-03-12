@@ -1,4 +1,4 @@
-"""Command-line interface for the real estate listing scraper."""
+"""Command-line interface for the Australian real estate listing scraper."""
 
 from __future__ import annotations
 
@@ -10,30 +10,33 @@ from dataclasses import asdict
 
 from .advisor import advise_on_listing, format_advice
 from .analyzer import build_market_snapshot
-from .models import Listing, ListingStatus
+from .models import Listing
 from .scraper import (
     BaseScraper,
-    CraigslistScraper,
-    RealtorDotComScraper,
-    RedfinScraper,
+    DomainScraper,
+    GumtreeScraper,
+    RealestateComAuScraper,
     get_all_scrapers,
 )
 
 _SCRAPER_MAP: dict[str, type[BaseScraper]] = {
-    "realtor": RealtorDotComScraper,
-    "redfin": RedfinScraper,
-    "craigslist": CraigslistScraper,
+    "domain": DomainScraper,
+    "rea": RealestateComAuScraper,
+    "gumtree": GumtreeScraper,
 }
 
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="re-scraper",
-        description="Scrape real estate listings and get purchase/negotiation advice.",
+        description=(
+            "Scrape Australian real estate listings and get "
+            "purchase/negotiation advice."
+        ),
     )
     p.add_argument(
         "location",
-        help="Location to search (e.g. 'Austin, TX' or 'Denver, CO').",
+        help="Location to search (e.g. 'Melbourne, VIC' or 'Sydney, NSW 2000').",
     )
     p.add_argument(
         "-s", "--source",
@@ -80,14 +83,17 @@ def _print_listing_table(listings: list[Listing]) -> None:
         print("No listings found.")
         return
 
-    header = f"{'#':>3}  {'Price':>12}  {'Bed':>3}  {'Bath':>4}  {'SqFt':>7}  {'$/SqFt':>8}  Address"
+    header = (f"{'#':>3}  {'Price (AUD)':>14}  {'Bed':>3}  {'Bath':>4}  "
+              f"{'m²':>6}  {'$/m²':>9}  {'Car':>3}  Address")
     print(header)
     print("-" * len(header))
     for i, l in enumerate(listings):
-        ppsf = f"${l.price_per_sqft:,.0f}" if l.price_per_sqft else "—"
-        sqft_s = f"{l.sqft:,}" if l.sqft else "—"
+        ppsm = f"${l.price_per_sqm:,.0f}" if l.price_per_sqm else "—"
+        sqm_s = f"{l.sqm:,}" if l.sqm else "—"
+        car_s = str(l.parking) if l.parking else "—"
         print(
-            f"{i:>3}  ${l.price:>11,}  {l.bedrooms:>3}  {l.bathrooms:>4.1f}  {sqft_s:>7}  {ppsf:>8}  {l.address}"
+            f"{i:>3}  ${l.price:>13,}  {l.bedrooms:>3}  {l.bathrooms:>4.0f}  "
+            f"{sqm_s:>6}  {ppsm:>9}  {car_s:>3}  {l.address}"
         )
     print(f"\nTotal: {len(listings)} listings")
 
@@ -97,10 +103,10 @@ def _print_market_summary(listings: list[Listing]) -> None:
     snap = build_market_snapshot(listings)
     if not snap:
         return
-    print("\n--- Market Summary ---")
+    print("\n--- Market Summary (AUD) ---")
     print(f"  Median price       : ${snap.median_price:,}")
-    print(f"  Median $/sqft      : ${snap.median_price_per_sqft:,.0f}")
-    print(f"  Median sqft        : {snap.median_sqft:,}")
+    print(f"  Median $/m²        : ${snap.median_price_per_sqm:,.0f}")
+    print(f"  Median m²          : {snap.median_sqm:,}")
     print(f"  Price range        : ${snap.price_range[0]:,} – ${snap.price_range[1]:,}")
     print(f"  Active listings    : {snap.total_active_listings}")
     if snap.avg_days_on_market:
@@ -134,7 +140,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.output_json:
         data = [asdict(l) for l in all_listings]
         for d in data:
-            d["status"] = d["status"].value if hasattr(d["status"], "value") else d["status"]
+            # Serialize enums to their string values
+            for key in ("status", "property_type"):
+                if hasattr(d.get(key), "value"):
+                    d[key] = d[key].value
         print(json.dumps(data, indent=2))
         return 0
 
@@ -145,7 +154,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.advise is not None:
         idx = args.advise
         if idx < 0 or idx >= len(all_listings):
-            print(f"Error: index {idx} out of range (0–{len(all_listings) - 1}).", file=sys.stderr)
+            print(f"Error: index {idx} out of range (0–{len(all_listings) - 1}).",
+                  file=sys.stderr)
             return 1
         target = all_listings[idx]
         comparables = [l for l in all_listings if l is not target]

@@ -1,11 +1,11 @@
-"""Negotiation and purchase advisor — generates advice from market data."""
+"""Negotiation and purchase advisor — generates Australia-specific advice."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .analyzer import build_market_snapshot, price_position, sqft_value_position
-from .models import Listing, MarketSnapshot
+from .analyzer import build_market_snapshot, price_position, sqm_value_position
+from .models import Listing, ListingStatus, MarketSnapshot, PropertyType
 
 
 @dataclass
@@ -20,55 +20,95 @@ class OfferAdvice:
     tips: list[str] = field(default_factory=list)
 
 
+# --- Tip generators ---
+
+
 def _dom_tips(listing: Listing) -> list[str]:
     """Generate tips based on days-on-market."""
     dom = listing.days_on_market
     if dom is None:
-        return ["Ask the listing agent how long the property has been on the market."]
+        return ["Ask the agent how long the property has been on the market."]
     if dom > 90:
         return [
-            f"This listing has been on the market for {dom} days — the seller may be motivated.",
-            "Consider offering 8–12% below asking and negotiate from there.",
+            f"This listing has been on the market for {dom} days — the vendor may be motivated.",
+            "Consider offering 8–12% below the asking/guide price and negotiate from there.",
             "Ask the agent if there have been previous price reductions.",
         ]
     if dom > 45:
         return [
             f"On the market for {dom} days — moderate time, some negotiation room likely.",
-            "Consider starting 5–8% below asking.",
+            "Consider starting 5–8% below the asking/guide price.",
         ]
     if dom > 14:
         return [
             f"Listed for {dom} days — still relatively fresh.",
-            "A competitive offer 2–5% below asking is reasonable.",
+            "A competitive offer 2–5% below the guide price is reasonable.",
         ]
     return [
         f"Only {dom} days on market — this is a fresh listing.",
-        "In a competitive market, consider offering at or near asking price.",
-        "If you really want this property, a strong initial offer reduces risk of losing it.",
+        "In a competitive market, consider offering at or near the guide price.",
+        "If you really want this property, a strong initial offer reduces the risk of losing it.",
     ]
 
 
-def _hoa_tips(listing: Listing) -> list[str]:
-    if listing.hoa_fee is None:
-        return ["Confirm whether there is an HOA and its monthly fee before making an offer."]
-    if listing.hoa_fee > 400:
-        return [
-            f"HOA fee is ${listing.hoa_fee}/mo — factor this into your monthly budget.",
-            "Request the HOA's reserve study and meeting minutes to check for upcoming special assessments.",
-        ]
-    if listing.hoa_fee > 0:
-        return [f"HOA fee is ${listing.hoa_fee}/mo — request a copy of CC&Rs before closing."]
-    return []
+def _auction_tips(listing: Listing) -> list[str]:
+    """Tips specific to auction sales (very common in Australia)."""
+    if listing.status != ListingStatus.AUCTION:
+        return []
+    tips = [
+        "This property is going to auction — there is no cooling-off period at auction.",
+        "Get your building & pest inspection done BEFORE auction day.",
+        "Ensure your finance is unconditionally approved before bidding.",
+        "Set a firm maximum bid and stick to it on the day.",
+        "Register to bid early and bring valid ID.",
+    ]
+    if listing.auction_date:
+        tips.insert(0, f"Auction date: {listing.auction_date}.")
+    return tips
+
+
+def _strata_tips(listing: Listing) -> list[str]:
+    """Tips for strata/body corporate properties (apartments, townhouses)."""
+    is_strata = listing.property_type in (
+        PropertyType.APARTMENT, PropertyType.TOWNHOUSE, PropertyType.VILLA
+    )
+    if not is_strata and listing.strata_levy is None:
+        return []
+    tips = []
+    if listing.strata_levy is not None and listing.strata_levy > 0:
+        tips.append(
+            f"Strata levy is ${listing.strata_levy:,}/quarter — factor this into your budget."
+        )
+    tips.extend([
+        "Request a strata report (Section 184 certificate in NSW, Owners Corporation certificate in VIC).",
+        "Check the sinking fund balance — a low balance may mean future special levies.",
+        "Review strata meeting minutes for disputes, planned works, or building defects.",
+    ])
+    return tips
+
+
+def _stamp_duty_tips(listing: Listing) -> list[str]:
+    """Tips about stamp duty (transfer duty) — a major cost in Australia."""
+    price = listing.price
+    tips = [
+        f"Budget for stamp duty (transfer duty) on top of the ${price:,} purchase price.",
+        "First home buyers may be eligible for stamp duty concessions or exemptions — check your state's revenue office.",
+        "Foreign buyers face surcharge stamp duty in most states (up to 8% extra).",
+    ]
+    return tips
 
 
 def _general_purchase_tips() -> list[str]:
+    """General Australian property purchase tips."""
     return [
-        "Always get a professional home inspection before finalizing your offer.",
-        "Request seller disclosures early — look for past water damage, foundation issues, or unpermitted work.",
-        "Get pre-approved (not just pre-qualified) for your mortgage to strengthen your offer.",
-        "Include an appraisal contingency to protect against overpaying.",
-        "Research the neighborhood: check school ratings, crime stats, and planned developments.",
-        "Factor in closing costs (typically 2–5% of purchase price) when budgeting.",
+        "Always get a building & pest inspection before making an unconditional offer.",
+        "Engage a conveyancer or solicitor early to review the Contract of Sale and Section 32 (VIC) / vendor disclosure.",
+        "Get unconditional finance approval (not just pre-approval) to strengthen your offer.",
+        "Understand the cooling-off period in your state (e.g. 5 business days in NSW, 3 in VIC for private treaty).",
+        "Research the suburb: check median prices on Domain/REA, school zones, flood maps, and council planning.",
+        "Factor in all purchase costs: stamp duty, conveyancing, building & pest, mortgage registration, and moving.",
+        "If buying at auction, remember there is NO cooling-off period — all inspections and finance must be done beforehand.",
+        "Check if the property is affected by easements, covenants, or heritage overlays.",
     ]
 
 
@@ -96,6 +136,11 @@ def _offer_range(listing: Listing, snapshot: MarketSnapshot | None) -> tuple[int
         low_pct -= 0.03
         high_pct -= 0.02
 
+    # Auction properties — less room for below-guide offers
+    if listing.status == ListingStatus.AUCTION:
+        low_pct = max(low_pct, 0.95)
+        high_pct = max(high_pct, 1.0)
+
     low = int(listing.price * low_pct)
     high = int(listing.price * high_pct)
     return low, high
@@ -105,12 +150,14 @@ def advise_on_listing(listing: Listing, comparables: list[Listing]) -> OfferAdvi
     """Generate comprehensive negotiation advice for a listing."""
     snapshot = build_market_snapshot(comparables)
     price_assess = price_position(listing, snapshot) if snapshot else "no comparables available"
-    value_assess = sqft_value_position(listing, snapshot) if snapshot else "no comparables available"
+    value_assess = sqm_value_position(listing, snapshot) if snapshot else "no comparables available"
     offer_low, offer_high = _offer_range(listing, snapshot)
 
     tips: list[str] = []
     tips.extend(_dom_tips(listing))
-    tips.extend(_hoa_tips(listing))
+    tips.extend(_auction_tips(listing))
+    tips.extend(_strata_tips(listing))
+    tips.extend(_stamp_duty_tips(listing))
     tips.extend(_general_purchase_tips())
 
     return OfferAdvice(
@@ -126,11 +173,15 @@ def advise_on_listing(listing: Listing, comparables: list[Listing]) -> OfferAdvi
 def format_advice(advice: OfferAdvice) -> str:
     """Render OfferAdvice as a human-readable report."""
     l = advice.listing
+    sqm_str = f"{l.sqm:,} m²" if l.sqm else "—"
+    parking_str = f" / {l.parking} car" if l.parking else ""
+    prop_type = l.property_type.value.replace("_", " ").title()
     lines = [
         "=" * 70,
         f"  PROPERTY: {l.address}",
-        f"  ASKING PRICE: ${l.price:,}",
-        f"  {l.bedrooms} bed / {l.bathrooms} bath / {l.sqft:,} sqft",
+        f"  GUIDE PRICE: ${l.price:,} AUD",
+        f"  {l.bedrooms} bed / {l.bathrooms:.0f} bath{parking_str} / {sqm_str}",
+        f"  Type: {prop_type}",
         "=" * 70,
         "",
         "MARKET POSITION",
@@ -138,8 +189,8 @@ def format_advice(advice: OfferAdvice) -> str:
         f"  Value assessment : {advice.value_assessment}",
         "",
         "SUGGESTED OFFER RANGE",
-        f"  Low  : ${advice.suggested_offer_low:,}",
-        f"  High : ${advice.suggested_offer_high:,}",
+        f"  Low  : ${advice.suggested_offer_low:,} AUD",
+        f"  High : ${advice.suggested_offer_high:,} AUD",
         "",
         "NEGOTIATION & PURCHASE TIPS",
     ]
