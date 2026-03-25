@@ -2,6 +2,7 @@ import { Env, DailyDigest, PropertyUpdate, ScrapeError, AustralianState } from '
 import { SOURCES } from './sources';
 import { scrapeSource } from './scraper';
 import { storeDailyDigest, getLatestDigest, getDigestByDate, listDigestDates, filterNewUpdates } from './storage';
+import { generateAllContent, generateEmail, generateXPost, generateFacebookPost, DEFAULT_CONFIG } from './content';
 
 const ALL_STATES: AustralianState[] = ['NSW', 'VIC', 'QLD', 'SA', 'WA', 'TAS', 'NT', 'ACT'];
 
@@ -33,6 +34,10 @@ export default {
           '/api/updates/state/:state': 'Latest updates filtered by state',
           '/api/dates': 'List of available digest dates',
           '/api/scrape': 'Trigger a manual scrape (POST)',
+          '/api/content': 'CRO-optimized content for all channels (email, X, Facebook)',
+          '/api/content/email': 'Email newsletter HTML and plain text',
+          '/api/content/x': 'X (Twitter) post and thread content',
+          '/api/content/facebook': 'Facebook post content',
         },
         states: ALL_STATES,
         cronSchedule: 'Daily at 6:00 AM AEST',
@@ -81,6 +86,50 @@ export default {
     if (url.pathname === '/api/dates') {
       const dates = await listDigestDates(env);
       return jsonResponse({ dates, count: dates.length });
+    }
+
+    // Route: GET /api/content - all channel content
+    if (url.pathname === '/api/content') {
+      const digest = await getLatestDigest(env);
+      if (!digest) {
+        return jsonResponse({ message: 'No digests available yet.' }, 404);
+      }
+      const content = generateAllContent(digest);
+      return jsonResponse(content);
+    }
+
+    // Route: GET /api/content/email - email newsletter
+    if (url.pathname === '/api/content/email') {
+      const digest = await getLatestDigest(env);
+      if (!digest) {
+        return jsonResponse({ message: 'No digests available yet.' }, 404);
+      }
+      const format = url.searchParams.get('format');
+      const email = generateEmail(digest, DEFAULT_CONFIG);
+      if (format === 'html') {
+        return new Response(email.html, {
+          headers: { 'Content-Type': 'text/html', ...CORS_HEADERS },
+        });
+      }
+      return jsonResponse(email);
+    }
+
+    // Route: GET /api/content/x - X/Twitter post
+    if (url.pathname === '/api/content/x') {
+      const digest = await getLatestDigest(env);
+      if (!digest) {
+        return jsonResponse({ message: 'No digests available yet.' }, 404);
+      }
+      return jsonResponse(generateXPost(digest, DEFAULT_CONFIG));
+    }
+
+    // Route: GET /api/content/facebook - Facebook post
+    if (url.pathname === '/api/content/facebook') {
+      const digest = await getLatestDigest(env);
+      if (!digest) {
+        return jsonResponse({ message: 'No digests available yet.' }, 404);
+      }
+      return jsonResponse(generateFacebookPost(digest, DEFAULT_CONFIG));
     }
 
     // Route: POST /api/scrape (manual trigger)
