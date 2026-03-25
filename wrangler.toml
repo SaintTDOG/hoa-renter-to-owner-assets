@@ -1,0 +1,13 @@
+name = "au-property-law-scraper"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+# Daily cron trigger at 6:00 AM AEST (20:00 UTC previous day)
+[triggers]
+crons = ["0 20 * * *"]
+
+# KV namespace for storing scraped updates
+[[kv_namespaces]]
+binding = "PROPERTY_UPDATES"
+id = "property-updates-kv"
+preview_id = "property-updates-kv-preview"
