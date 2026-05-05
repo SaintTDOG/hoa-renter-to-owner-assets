@@ -1,0 +1,31 @@
+id,category,hook,primary_pain,suggested_archetype
+H01,question,"Why are renters paying $30K a year to own absolutely nothing?",rent-as-waste,relatable_woman_late_20s
+H02,question,"You're working 40 hours a week — so why is your landlord the one getting richer?",landlord-resentment,tradie_male_30s
+H03,stat,"87% of Aussie renters think they need a 20% deposit. Most of them are wrong.",deposit-myth,mentor_male_50s
+H04,stat,"Rent in Brisbane is up 38% in three years. Your wage isn't.",rent-inflation,mum_late_30s
+H05,story,"Six months ago Alan was renting. This morning he picked up the keys to his own home.",social-proof,mentor_male_50s
+H06,story,"My partner and I gave up on owning. Then a mate told us about this.",disbelief-to-hope,relatable_woman_late_20s
+H07,contrarian,"Stop saving for a 20% deposit. There's a faster way.",saver-fatigue,confident_woman_30s
+H08,contrarian,"Everyone tells renters to 'just save harder.' That advice is broken.",bad-advice,tradie_male_30s
+H09,POV,"If you're renting in Queensland right now — you need to hear this.",geo-targeted-qld,mum_late_30s
+H10,POV,"To every renter who's been told they'll never own — read this.",hopelessness,mentor_male_50s
+H11,calculator,"Your rent this year: $26,000. Your equity: zero. There's another option.",opportunity-cost,confident_woman_30s
+H12,calculator,"Five years of rent = $130,000 you'll never see again. Here's what to do instead.",opportunity-cost,tradie_male_30s
+H13,curiosity,"There's a pathway most Aussie renters have never heard of. Most banks won't tell you about it.",hidden-info,mentor_male_50s
+H14,curiosity,"What if your weekly rent could be going toward a home you actually own?",reframe,relatable_woman_late_20s
+H15,pattern_interrupt,"This isn't another 'how to save for a deposit' video. Watch.",anti-cliche,young_male_early_20s
+H16,pattern_interrupt,"Real talk — the deposit isn't the problem. The advice you've been given is.",myth-buster,confident_woman_30s
+H17,emotional,"My kids asked when we'd have a backyard of our own. I didn't have an answer. Until now.",family-pressure,mum_late_30s
+H18,emotional,"I'm 34, two kids, still renting, and I was done feeling stuck. So I looked into this.",personal-crisis,mum_late_30s
+H19,empowerment,"Generation Rent is over. Here's what's replacing it.",identity-shift,young_male_early_20s
+H20,empowerment,"You don't need rich parents. You don't need a six-figure salary. You need to know this exists.",accessibility,relatable_woman_late_20s
+H21,fear-of-missing-out,"While you're saving, prices are climbing. There's a way to stop chasing the market.",price-chasing,tradie_male_30s
+H22,fear-of-missing-out,"Every year you rent is another year prices move further away. There's a circuit-breaker.",time-pressure,confident_woman_30s
+H23,specific_to_situation,"Renting with pets and kids? This is for you.",rental-restrictions,mum_late_30s
+H24,specific_to_situation,"Just got knocked back by a bank? Don't give up yet.",rejection-recovery,mentor_male_50s
+H25,authority,"I help Australian families go from renting to owning every week. Here's the part most people miss.",expertise,mentor_male_50s
+H26,authority,"After helping hundreds of Aussie renters become homeowners, here's what I wish more people knew.",expertise,mentor_male_50s
+H27,visual_promise,"This is what 'priced out of the market' actually looks like. And this is the way out.",before-after,confident_woman_30s
+H28,direct_offer,"If you're paying more than $500 a week in rent, it's worth the 60 seconds.",qualification,tradie_male_30s
+H29,direct_offer,"Renters in NSW and QLD — there's a programme worth knowing about before your next lease.",geo-direct,mum_late_30s
+H30,reframe,"Your rent isn't 'wasted money'. It's just money working for someone else. Here's how to flip that.",reframe-positive,confident_woman_30s
