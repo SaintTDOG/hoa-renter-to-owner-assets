@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import asdict
+from threading import Lock
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
@@ -26,11 +28,12 @@ _SCRAPER_MAP = {
     "gumtree": GumtreeScraper,
 }
 
-# Allow configuring CORS origins via env var (comma-separated)
 _ALLOWED_ORIGINS = os.getenv(
     "CORS_ORIGINS",
     "https://your-propertyiq.pages.dev,http://localhost:3000",
 ).split(",")
+
+_CACHE_TTL = int(os.getenv("CACHE_TTL_SECONDS", "900"))  # 15 min default
 
 app = FastAPI(
     title="PropertyIQ — Should I Buy?",
@@ -44,6 +47,26 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+# --- Simple TTL cache ---
+
+_cache: dict[str, tuple[float, list[Listing]]] = {}
+_cache_lock = Lock()
+
+
+def _get_cached(key: str) -> list[Listing] | None:
+    with _cache_lock:
+        entry = _cache.get(key)
+        if entry and (time.monotonic() - entry[0]) < _CACHE_TTL:
+            return entry[1]
+        _cache.pop(key, None)
+        return None
+
+
+def _set_cached(key: str, listings: list[Listing]) -> None:
+    with _cache_lock:
+        _cache[key] = (time.monotonic(), listings)
 
 
 # --- Response models ---
@@ -132,23 +155,67 @@ def _market_summary(listings: list[Listing]) -> Optional[MarketSummaryResponse]:
     )
 
 
+def _filter_comparables(target: Listing, all_listings: list[Listing]) -> list[Listing]:
+    """Filter comparables to the same property type and similar bedroom count."""
+    same_type = [
+        l for l in all_listings
+        if l is not target and l.property_type == target.property_type
+    ]
+    if len(same_type) >= 2:
+        return same_type
+
+    return [l for l in all_listings if l is not target]
+
+
 def _verdict(advice) -> str:
     """Generate a plain-English verdict from the offer advice."""
     listing = advice.listing
     price_a = advice.price_assessment.lower()
     value_a = advice.value_assessment.lower()
 
+    if "no comparables" in price_a or "insufficient" in price_a:
+        return "Not enough market data to assess — do your own research on this area."
+
     if "bargain" in price_a or "good value" in value_a:
         return "Looks like a good buy — priced below the local market."
+    if "below market" in price_a or "below market" in value_a:
+        return "Slightly under market — could be a good opportunity if it checks out."
     if "premium" in price_a and "premium" in value_a:
         return "Expensive for the area — negotiate hard or consider alternatives."
     if "premium" in price_a:
         return "Above-market price, but the per-m² rate is reasonable. Negotiate."
+    if "premium" in value_a:
+        return "High cost per m² for the area — check what justifies the premium."
     if listing.status == ListingStatus.AUCTION:
         return "Going to auction — do your homework before bidding."
     if listing.days_on_market and listing.days_on_market > 90:
         return "Been on the market a while — the vendor may be flexible on price."
     return "Fairly priced for the area — a competitive offer could secure it."
+
+
+def _scrape_listings(location: str, source: str, max_results: int) -> list[Listing]:
+    """Scrape listings with caching."""
+    cache_key = f"{location.lower().strip()}|{source}|{max_results}"
+    cached = _get_cached(cache_key)
+    if cached is not None:
+        return cached
+
+    delay = float(os.getenv("SCRAPER_DELAY", "1.0"))
+    kwargs = {"delay": delay}
+
+    if source == "all":
+        scrapers = get_all_scrapers(**kwargs)
+    elif source in _SCRAPER_MAP:
+        scrapers = [_SCRAPER_MAP[source](**kwargs)]
+    else:
+        raise HTTPException(400, f"Unknown source '{source}'. Use: domain, rea, gumtree, all")
+
+    all_listings: list[Listing] = []
+    for scraper in scrapers:
+        all_listings.extend(scraper.search(location, max_results=max_results))
+
+    _set_cached(cache_key, all_listings)
+    return all_listings
 
 
 # --- Routes ---
@@ -165,19 +232,7 @@ async def search_listings(
     max_results: int = Query(20, ge=1, le=50),
 ):
     """Search Australian real estate listings by location."""
-    delay = float(os.getenv("SCRAPER_DELAY", "1.0"))
-    kwargs = {"delay": delay}
-
-    if source == "all":
-        scrapers = get_all_scrapers(**kwargs)
-    elif source in _SCRAPER_MAP:
-        scrapers = [_SCRAPER_MAP[source](**kwargs)]
-    else:
-        raise HTTPException(400, f"Unknown source '{source}'. Use: domain, rea, gumtree, all")
-
-    all_listings: list[Listing] = []
-    for scraper in scrapers:
-        all_listings.extend(scraper.search(location, max_results=max_results))
+    all_listings = _scrape_listings(location, source, max_results)
 
     return SearchResponse(
         location=location,
@@ -196,19 +251,7 @@ async def should_i_buy(
     max_results: int = Query(20, ge=1, le=50),
 ):
     """Scrape listings, then return 'Should I Buy?' advice for a specific one."""
-    delay = float(os.getenv("SCRAPER_DELAY", "1.0"))
-    kwargs = {"delay": delay}
-
-    if source == "all":
-        scrapers = get_all_scrapers(**kwargs)
-    elif source in _SCRAPER_MAP:
-        scrapers = [_SCRAPER_MAP[source](**kwargs)]
-    else:
-        raise HTTPException(400, f"Unknown source '{source}'. Use: domain, rea, gumtree, all")
-
-    all_listings: list[Listing] = []
-    for scraper in scrapers:
-        all_listings.extend(scraper.search(location, max_results=max_results))
+    all_listings = _scrape_listings(location, source, max_results)
 
     if not all_listings:
         raise HTTPException(404, f"No listings found for '{location}'.")
@@ -219,7 +262,7 @@ async def should_i_buy(
         )
 
     target = all_listings[index]
-    comparables = [l for l in all_listings if l is not target]
+    comparables = _filter_comparables(target, all_listings)
     advice = advise_on_listing(target, comparables)
     report = format_advice(advice)
 

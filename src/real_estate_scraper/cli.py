@@ -158,7 +158,11 @@ def main(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
             return 1
         target = all_listings[idx]
-        comparables = [l for l in all_listings if l is not target]
+        same_type = [l for l in all_listings
+                     if l is not target and l.property_type == target.property_type]
+        comparables = same_type if len(same_type) >= 2 else [
+            l for l in all_listings if l is not target
+        ]
         advice = advise_on_listing(target, comparables)
         print(format_advice(advice))
 

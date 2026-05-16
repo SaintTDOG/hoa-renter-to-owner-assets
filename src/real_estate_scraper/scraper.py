@@ -30,6 +30,36 @@ _DEFAULT_HEADERS = {
 _AU_STATES = {"nsw", "vic", "qld", "wa", "sa", "tas", "act", "nt"}
 
 
+_PRICE_FLOOR = 10_000
+
+
+def _parse_price(text: Optional[str]) -> int:
+    """Parse Australian price text, handling ranges, k/m suffixes, and junk."""
+    if not text:
+        return 0
+    t = text.strip().lower()
+    if any(kw in t for kw in ("contact", "enquire", "expression", "eoi", "poa", "auction")):
+        return 0
+
+    # Match first dollar-prefixed number with optional k/m suffix
+    m = re.search(r"\$\s*([\d,]+(?:\.\d+)?)\s*([km])?", t)
+    if not m:
+        # Only try without dollar sign if text looks price-like (not dates, IDs, etc.)
+        m = re.search(r"(?:^|[\s(])([\d,]+(?:\.\d+)?)\s*([km])", t)
+    if not m:
+        return 0
+
+    raw = float(m.group(1).replace(",", ""))
+    suffix = m.group(2)
+    if suffix == "m":
+        raw *= 1_000_000
+    elif suffix == "k":
+        raw *= 1_000
+
+    price = int(raw)
+    return price if price >= _PRICE_FLOOR else 0
+
+
 def _safe_int(text: Optional[str], default: int = 0) -> int:
     """Extract an integer from text, stripping non-digit characters."""
     if not text:
@@ -132,7 +162,7 @@ class DomainScraper(BaseScraper):
             price_el = card.select_one("[data-testid='listing-card-price'],"
                                        ".listing-result__price")
             price_text = price_el.get_text(strip=True) if price_el else ""
-            price = _safe_int(price_text)
+            price = _parse_price(price_text)
             if price == 0:
                 return None
 
@@ -236,7 +266,7 @@ class RealestateComAuScraper(BaseScraper):
                                        ".card__price,"
                                        "span.price")
             price_text = price_el.get_text(strip=True) if price_el else ""
-            price = _safe_int(price_text)
+            price = _parse_price(price_text)
             if price == 0:
                 return None
 
@@ -331,7 +361,7 @@ class GumtreeScraper(BaseScraper):
     def _parse_row(self, row: Tag) -> Optional[Listing]:
         try:
             price_el = row.select_one("[class*='price'], .user-ad-price")
-            price = _safe_int(price_el.get_text() if price_el else None)
+            price = _parse_price(price_el.get_text() if price_el else None)
             if price == 0:
                 return None
 

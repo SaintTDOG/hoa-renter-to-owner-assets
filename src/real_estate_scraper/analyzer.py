@@ -5,15 +5,18 @@ from __future__ import annotations
 import statistics
 from typing import Optional
 
-from .models import Listing, MarketSnapshot
+from .models import Listing, ListingStatus, MarketSnapshot
 
 
 def build_market_snapshot(listings: list[Listing]) -> Optional[MarketSnapshot]:
     """Aggregate a list of listings into a MarketSnapshot.
 
-    Returns None when there are fewer than 2 listings to compare.
+    Returns None when there are fewer than 2 active/auction listings to compare.
     """
-    priced = [l for l in listings if l.price > 0]
+    priced = [
+        l for l in listings
+        if l.price > 0 and l.status in (ListingStatus.ACTIVE, ListingStatus.AUCTION)
+    ]
     if len(priced) < 2:
         return None
 
@@ -39,8 +42,10 @@ def price_position(listing: Listing, snapshot: MarketSnapshot) -> str:
     pct = ((listing.price - snapshot.median_price) / snapshot.median_price) * 100
     if pct < -10:
         return f"{abs(pct):.0f}% below median — potential bargain"
-    if pct < 0:
+    if pct < -2:
         return f"{abs(pct):.0f}% below median — slightly under market"
+    if pct <= 2:
+        return "right at market value"
     if pct < 10:
         return f"{pct:.0f}% above median — near market value"
     return f"{pct:.0f}% above median — premium priced"
@@ -54,6 +59,10 @@ def sqm_value_position(listing: Listing, snapshot: MarketSnapshot) -> str:
            / snapshot.median_price_per_sqm) * 100
     if pct < -10:
         return f"${listing.price_per_sqm:,.0f}/m² — {abs(pct):.0f}% below area median (good value)"
-    if pct < 5:
-        return f"${listing.price_per_sqm:,.0f}/m² — near area median"
+    if pct < -2:
+        return f"${listing.price_per_sqm:,.0f}/m² — {abs(pct):.0f}% below area median (below market)"
+    if pct <= 2:
+        return f"${listing.price_per_sqm:,.0f}/m² — right at area median"
+    if pct < 10:
+        return f"${listing.price_per_sqm:,.0f}/m² — {pct:.0f}% above area median (slightly above)"
     return f"${listing.price_per_sqm:,.0f}/m² — {pct:.0f}% above area median (premium)"

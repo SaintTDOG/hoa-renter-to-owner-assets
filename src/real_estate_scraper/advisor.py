@@ -28,10 +28,19 @@ def _dom_tips(listing: Listing) -> list[str]:
     dom = listing.days_on_market
     if dom is None:
         return ["Ask the agent how long the property has been on the market."]
+
+    if listing.status == ListingStatus.AUCTION:
+        if dom > 60:
+            return [
+                f"This property has been listed for {dom} days before auction — "
+                "check if the auction was rescheduled and why.",
+            ]
+        return []
+
     if dom > 90:
         return [
             f"This listing has been on the market for {dom} days — the vendor may be motivated.",
-            "Consider offering 8–12% below the asking/guide price and negotiate from there.",
+            "There is likely room to negotiate well below the guide price.",
             "Ask the agent if there have been previous price reductions.",
         ]
     if dom > 45:
@@ -79,11 +88,16 @@ def _strata_tips(listing: Listing) -> list[str]:
         tips.append(
             f"Strata levy is ${listing.strata_levy:,}/quarter — factor this into your budget."
         )
-    tips.extend([
-        "Request a strata report (Section 184 certificate in NSW, Owners Corporation certificate in VIC).",
-        "Check the sinking fund balance — a low balance may mean future special levies.",
-        "Review strata meeting minutes for disputes, planned works, or building defects.",
-    ])
+    if is_strata:
+        tips.extend([
+            "Request a strata/body corporate report — the name varies by state "
+            "(e.g. Section 184 certificate in NSW, Owners Corporation certificate in VIC, "
+            "Body Corporate Information Certificate in QLD).",
+            "Check the sinking fund balance — a low balance may mean future special levies.",
+            "Review strata meeting minutes for disputes, planned works, or building defects.",
+        ])
+    else:
+        tips.append("This property has a body corporate levy — request details of what it covers.")
     return tips
 
 
@@ -92,8 +106,10 @@ def _stamp_duty_tips(listing: Listing) -> list[str]:
     price = listing.price
     tips = [
         f"Budget for stamp duty (transfer duty) on top of the ${price:,} purchase price.",
-        "First home buyers may be eligible for stamp duty concessions or exemptions — check your state's revenue office.",
-        "Foreign buyers face surcharge stamp duty in most states (up to 8% extra).",
+        "First home buyers may be eligible for stamp duty concessions or exemptions — "
+        "check your state's revenue office.",
+        "Foreign buyers face surcharge stamp duty in most states (up to 9% extra in NSW). "
+        "Rates vary by state.",
     ]
     return tips
 
@@ -102,12 +118,18 @@ def _general_purchase_tips() -> list[str]:
     """General Australian property purchase tips."""
     return [
         "Always get a building & pest inspection before making an unconditional offer.",
-        "Engage a conveyancer or solicitor early to review the Contract of Sale and Section 32 (VIC) / vendor disclosure.",
+        "Engage a conveyancer or solicitor early to review the Contract of Sale "
+        "and vendor disclosure documents (e.g. Section 32 in VIC).",
         "Get unconditional finance approval (not just pre-approval) to strengthen your offer.",
-        "Understand the cooling-off period in your state (e.g. 5 business days in NSW, 3 in VIC for private treaty).",
-        "Research the suburb: check median prices on Domain/REA, school zones, flood maps, and council planning.",
-        "Factor in all purchase costs: stamp duty, conveyancing, building & pest, mortgage registration, and moving.",
-        "If buying at auction, remember there is NO cooling-off period — all inspections and finance must be done beforehand.",
+        "Understand the cooling-off period in your state — they vary from none (WA, TAS) to "
+        "5 business days (NSW, QLD, ACT). VIC has 3 clear business days. "
+        "Check with your conveyancer.",
+        "Research the suburb: check median prices on Domain/REA, school zones, flood maps, "
+        "and council planning.",
+        "Factor in all purchase costs: stamp duty, conveyancing, building & pest, "
+        "mortgage registration, and moving.",
+        "If buying at auction, there is NO cooling-off period — all inspections and finance "
+        "must be done beforehand.",
         "Check if the property is affected by easements, covenants, or heritage overlays.",
     ]
 
@@ -118,27 +140,23 @@ def _offer_range(listing: Listing, snapshot: MarketSnapshot | None) -> tuple[int
         pct_diff = (listing.price - snapshot.median_price) / snapshot.median_price
 
         if pct_diff > 0.15:
-            # Overpriced relative to market
             low_pct, high_pct = 0.85, 0.93
         elif pct_diff > 0.05:
             low_pct, high_pct = 0.90, 0.97
         elif pct_diff < -0.10:
-            # Already below market — less room to negotiate
             low_pct, high_pct = 0.95, 1.0
         else:
             low_pct, high_pct = 0.92, 0.98
     else:
         low_pct, high_pct = 0.90, 0.97
 
-    # Adjust for days on market
     dom = listing.days_on_market
     if dom is not None and dom > 60:
         low_pct -= 0.03
         high_pct -= 0.02
 
-    # Auction properties — less room for below-guide offers
     if listing.status == ListingStatus.AUCTION:
-        low_pct = max(low_pct, 0.95)
+        low_pct = (low_pct + 0.95) / 2
         high_pct = max(high_pct, 1.0)
 
     low = int(listing.price * low_pct)
@@ -170,17 +188,24 @@ def advise_on_listing(listing: Listing, comparables: list[Listing]) -> OfferAdvi
     )
 
 
+def _format_bathrooms(value: float) -> str:
+    if value == int(value):
+        return str(int(value))
+    return f"{value:g}"
+
+
 def format_advice(advice: OfferAdvice) -> str:
     """Render OfferAdvice as a human-readable report."""
     l = advice.listing
     sqm_str = f"{l.sqm:,} m²" if l.sqm else "—"
     parking_str = f" / {l.parking} car" if l.parking else ""
     prop_type = l.property_type.value.replace("_", " ").title()
+    bath_str = _format_bathrooms(l.bathrooms)
     lines = [
         "=" * 70,
         f"  PROPERTY: {l.address}",
         f"  GUIDE PRICE: ${l.price:,} AUD",
-        f"  {l.bedrooms} bed / {l.bathrooms:.0f} bath{parking_str} / {sqm_str}",
+        f"  {l.bedrooms} bed / {bath_str} bath{parking_str} / {sqm_str}",
         f"  Type: {prop_type}",
         "=" * 70,
         "",
