@@ -1,0 +1,21 @@
+# Fly.io deployment config — run `fly launch` then `fly deploy`
+app = "propertyiq-scraper"
+primary_region = "syd"  # Sydney — closest to AU users
+
+[build]
+
+[env]
+  CORS_ORIGINS = "https://your-propertyiq.pages.dev,http://localhost:3000"
+  SCRAPER_DELAY = "1.0"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

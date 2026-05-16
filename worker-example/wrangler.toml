@@ -1,0 +1,6 @@
+name = "propertyiq-should-i-buy"
+main = "should-i-buy.js"
+compatibility_date = "2024-01-01"
+
+# Set via: wrangler secret put SCRAPER_API_URL
+# Value: https://propertyiq-scraper.fly.dev (or your deployed API URL)
